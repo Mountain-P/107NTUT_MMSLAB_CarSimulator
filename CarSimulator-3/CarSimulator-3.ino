@@ -6,11 +6,11 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266WiFiMulti.h>
 #include <ESP8266WebServer.h>
+#include <WiFiClientSecure.h>
 #include <FS.h>
 #include <WebSocketsServer.h>
-#include <SocketIOClient.h>
 #include <ArduinoJson.h>
-#include <SocketIOClient.h>
+
 
 int EGDoor_Status = 0;
 int FLDoor_Status = 0;
@@ -39,35 +39,27 @@ void startSPIFFS();
 void startWebSocket();
 void startServer();
 
-int incomingByte;
-
 
 
 ESP8266WiFiMulti wifiMulti;         // Create an instance of the ESP8266WiFiMulti class, called 'wifiMulti'
-SocketIOClient webSocketio;
 ESP8266WebServer server(80);       // create a web server on port 80
 WebSocketsServer webSocket(81);    // create a websocket server on port 81
 SoftwareSerial Serial2(13, 15);
 Nextion hmi(Serial2, 9600);
+WiFiClientSecure client;
 
-char iohost[] = "hidden-stream-75593.herokuapp.com";
-int ioport = 443;
+const char* host = "testapi.dennysora.com";
+const int httpsPort = 8081;
 
-#include <WiFiClientSecure.h>
-const char* host = "testapi.dennysora.com"; //需要訪問的域名
-const int httpsPort = 8081; // 需要訪問的埠
-const String url = "/query"; // 需要訪問的地址
+const char fingerprint[] PROGMEM = "38 1C C2 79 A5 68 13 DB 21 C2 83 54 2B 12 65 82 E5 7D 91 74";
+
 const char *ssid = "ESP8266 Access Point"; // The name of the Wi-Fi network that will be created
 const char *password = "thereisnospoon";   // The password required to connect to it, leave blank for an open network
 
 const char *OTAName = "ESP8266";           // A name and a password for the OTA service
 const char *OTAPassword = "esp8266";
-const char* mdnsName = "esp8266"; // Domain name for the mDNS responder
 
 
-void ondata(SocketIOClient webSocketio, char *data) {
-  Serial.print(data);
-}
 void handledisplay() {
   String message = hmi.listen();
   if (message != "") { // if a message is received...
@@ -232,13 +224,13 @@ void handledisplay() {
     hmi.setComponentType("h1", "val", String(InTemp));
     hmi.setComponentType("h2", "val", String(OutTemp));
   }
-   if (message == "65 6 1 0 ff ff ff") {
+  if (message == "65 6 1 0 ff ff ff") {
     String EGTemptemp = hmi.listen().substring(3);
     EGTemp = EGTemptemp.toInt();
     Serial.print("EGTemp:");
     Serial.println(EGTemp);
   }
-   if (message == "65 6 2 0 ff ff ff") {
+  if (message == "65 6 2 0 ff ff ff") {
     String InTemptemp = hmi.listen().substring(3);
     InTemp = InTemptemp.toInt();
     Serial.print("InTemp:");
@@ -250,14 +242,44 @@ void handledisplay() {
     Serial.print("OutTemp:");
     Serial.println(OutTemp);
   }
+}
+String togetcaruuid() {
+  Serial.printf("Using fingerprint '%s'\n", fingerprint);
+  client.setFingerprint(fingerprint);
 
 
+  if (client.connect(host, httpsPort)) {
 
+    Serial.println("API Server Connect!");
+    String request = "{\"operationName\":\"AddCarID\",\"variables\":{},\"query\":\"mutation AddCarID {\\n AddCarID(AccountID: \\\"abcde@gmail.com\\\", CarName: \\\"123456\\\", TemporarilyToken: \\\"567878\\\") {\\n Status {\\n StatusCode\\n Description\\n }\\n AccountID\\n CarToken\\n }\\n}\\n\"}";
+    client.println("POST /query HTTP/1.1");
+    //client.println("Host: testapi.dennysora.com:8081");
+    client.println("Content-Type: application/json");
+    client.println("Connection: close");
+    client.print("Content-Length: ");
+    client.println(request.length());
+    client.println();
+    client.println(request);
+    Serial.println("request sent");
+    while (client.connected()) {
+      while (client.available()) {
+        Serial.println( client.readStringUntil('\r'));
+      }
+    }
+    Serial.println("closing connection");
+    client.stop();
+  }
+
+  else
+    Serial.println("API Server Fail!");
 
 
 
 
 }
+
+
+
 
 /*__________________________________________________________SETUP__________________________________________________________*/
 
@@ -275,48 +297,12 @@ void setup() {
 
   hmi.init();
 
+  togetcaruuid();
+
   for (uint8_t t = 4; t > 0; t--) {
     Serial.printf("[SETUP] BOOT WAIT %d...\n", t);
     Serial.flush();
     delay(100);
-  }
-
-  // server address, port and URL
-  // webSocketclient.begin("testapi.dennysora.com:8081",443 , "/socket?ID=123456");
-
-  // webSocketclient.beginSSL("webrouter.server", 443,"/path");
-  //  webSocketclient.beginSocketIO("testapi.dennysora.com:8081/socket?ID=123456", 8081);
-  // webSocketclient.beginSSL("echo.websocket.org", 443);//try
-  // event handler
-
-
-
-  // webSocketclient.beginSSL("testapi.dennysora.com:8081",443 ,"/socket?ID=123456");
-  // webSocketclient.onEvent(webSocketclientEvent);
-
-  if (!webSocketio.connect(iohost)) {
-    Serial.println("connection failedxx");
-    return;
-  }
-
-  WiFiClient client;
-  if (!client.connect(host, httpsPort)) {
-    Serial.println("server api connection failed");
-    return;
-  }
-  else {
-    serverstatus = true;
-    Serial.println("server api connection successful");
-    /**
-      // client.print({"query":"query Login{LogIn(AccountID: \"abcde@gmail.com\"Password: \"123456789\"Information: { Type: \"1\", Device: \"auctss\" }){Status{StatusCodeDescription}GetTimesAccountIDAccountToken}}\n"});
-      client.print("");
-      String line = client.readStringUntil('\n');
-      while(line.length() != 0){
-      Serial.println(line);
-      line = client.readStringUntil('\n');
-      }
-      Serial.println(line); client.stop();**/
-    return;
   }
   delay(10);
 
@@ -542,7 +528,6 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t lenght
       serializeJson(jsonBuffer, Serial);
       String output;
       serializeJson(jsonBuffer, output);
-      webSocketio.emit("send message", output);
       webSocket.sendTXT(num, output);
       serializeJsonPretty(jsonBuffer, Serial);
       Serial.println();
