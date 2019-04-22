@@ -243,7 +243,7 @@ void handledisplay() {
     Serial.println(OutTemp);
   }
 }
-String togetcaruuid() {
+String togetcaruuid(String AccountID,String CarName,String TempCode) {
   Serial.printf("Using fingerprint '%s'\n", fingerprint);
   client.setFingerprint(fingerprint);
 
@@ -251,9 +251,14 @@ String togetcaruuid() {
   if (client.connect(host, httpsPort)) {
 
     Serial.println("API Server Connect!");
+    DynamicJsonDocument serverrequest(1024);
+    
     String request = "{\"operationName\":\"AddCarID\",\"variables\":{},\"query\":\"mutation AddCarID {\\n AddCarID(AccountID: \\\"abcde@gmail.com\\\", CarName: \\\"123456\\\", TemporarilyToken: \\\"567878\\\") {\\n Status {\\n StatusCode\\n Description\\n }\\n AccountID\\n CarToken\\n }\\n}\\n\"}";
+    deserializeJson(serverrequest, request);
+    JsonObject serverrequestobj = serverrequest.as<JsonObject>();JsonObject obj = doc.as<JsonObject>();
+    
     client.println("POST /query HTTP/1.1");
-    //client.println("Host: testapi.dennysora.com:8081");
+    client.println("Host: testapi.dennysora.com:8081");
     client.println("Content-Type: application/json");
     client.println("Connection: close");
     client.print("Content-Length: ");
